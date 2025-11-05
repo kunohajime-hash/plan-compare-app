@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>２０２５年度版新標準メニュー電気料金比較（完全オフライン・モバイル最適版）</title>
+<style>
+  :root{font-family:system-ui,-apple-system,'Hiragino Kaku Gothic ProN',Meiryo,Arial;}
+  body{margin:0;padding:18px;background:#f6f7fb;color:#111;}
+  h1{margin:0 0 12px;font-size:20px;}
+  .grid{display:grid;gap:12px;grid-template-columns:1fr 420px;}
+  .card{background:#fff;border-radius:10px;padding:12px;box-shadow:0 2px 8px rgba(20,20,40,0.06);}
+  label{display:block;margin-top:8px;font-size:13px;color:#333;}
+  input[type="number"], select, input[type="text"]{width:100%;padding:10px;border:1px solid #dde3ef;border-radius:6px;font-size:16px;}
+  .small{font-size:12px;color:#666;}
+  button{padding:10px 14px;border-radius:10px;border:none;background:#2563eb;color:white;cursor:pointer;font-size:15px;}
+  button.ghost{background:transparent;color:#2563eb;border:1px solid #cfe0ff;}
+  .row{display:flex;gap:8px;align-items:center;}
+  table{width:100%;border-collapse:collapse;margin-top:12px;}
+  th,td{padding:8px;border-bottom:1px solid #eee;text-align:right;font-size:13px;}
+  th:first-child, td:first-child{text-align:left;}
+  .muted{color:#666;font-size:12px;}
+  .notice{font-size:13px;background:#fff3cd;padding:10px;border-radius:8px;border:1px solid #ffeeba;color:#7a5900;}
+  footer{margin-top:16px;font-size:12px;color:#666;}
+  .kdb{background:#eef2ff;padding:2px 6px;border-radius:6px;border:1px solid #e1e7ff;font-size:12px;}
+  .pill{display:inline-block;padding:2px 8px;border-radius:99px;background:#eef6ff;color:#1f4ed8;font-size:12px;border:1px solid #dbeafe;}
+  .rightkv{display:grid;grid-template-columns:1fr auto;gap:4px 8px;align-items:center}
+  .rightkv .key{color:#333;font-size:13px}
+  .rightkv .val{font-variant-numeric:tabular-nums}
+  .hl{background:#eff6ff;border:1px solid #dbeafe;border-radius:8px;padding:8px;margin-top:8px}
+  .ok{color:#0a7a2e}
+  .warn{color:#a15c00}
+
+  .hidden{display:none !important;}
+
+  /* モバイル最適化（600px以下） */
+  @media (max-width: 600px) {
+    body{padding:12px;}
+    .grid{display:flex;flex-direction:column;gap:12px;}
+    .row{flex-direction:column;gap:6px;align-items:stretch;}
+    button{width:100%;}
+  }
+</style>
+</head>
+<body>
+<h1>２０２５年度版新標準メニュー電気料金比較（完全オフライン・モバイル最適版）</h1>
+
+<div class="grid">
+  <!-- 左ブロック：入力 -->
+  <div class="card">
+    <div class="notice" style="margin-bottom:8px">
+      使い方：
+      <ul style="margin:6px 0 0 18px;padding:0;">
+        <li>「現在利用プラン」「検針日」「対象年月（2025/04〜07）」を選択。</li>
+        <li>契約電力（kW）を入力。高圧契約は <span class="kdb">基本料金 = 1kW単価 × 契約電力 × 0.85</span>。</li>
+        <li>使用量は：市場調整ゼロ→月間合計（kWh）。ベーシック／連動→時間帯別（朝・昼・晩・夜）。</li>
+        <li>右側の単価は固定（編集不可）。月選択で燃料費調整・市場価格調整（時間帯別）が自動反映。</li>
+      </ul>
+    </div>
+
+    <label>現在利用プラン</label>
+    <select id="currentPlan">
+      <option value="basic">ベーシックプラン</option>
+      <option value="zero">市場調整ゼロプラン</option>
+      <option value="linked">市場価格連動プラン</option>
+    </select>
+
+    <label>検針日</label>
+    <select id="meterDay">
+      <option value="1">毎月1日</option>
+      <option value="2toEnd">毎月2日〜月末</option>
+    </select>
+
+    <label>対象年月（2025年4月〜7月）</label>
+    <select id="targetMonth">
+      <option value="2025-04">2025年04月</option>
+      <option value="2025-05">2025年05月</option>
+      <option value="2025-06">2025年06月</option>
+      <option value="2025-07">2025年07月</option>
+    </select>
+
+    <label>契約電力（kW）</label>
+    <input id="contractKW" type="number" min="0" step="0.1" value="50" />
+
+    <!-- 使用量入力（プランに応じて表示切替） -->
+    <div id="monthlyBox" class="hidden">
+      <label>月間使用量（kWh） — 市場調整ゼロプラン用</label>
+      <input id="useMonthly" type="number" min="0" step="1" value="12000" />
+      <div class="small muted">※ベーシック／連動の計算には時間帯別が必要。未入力時は4等分の概算で評価します。</div>
+    </div>
+
+    <div id="timebandBox">
+      <label>時間帯別使用量（kWh） — ベーシック／市場価格連動プラン用</label>
+      <div class="row">
+        <input id="useMorning" type="number" min="0" step="1" placeholder="朝（例：2500）" />
+        <input id="useDay" type="number" min="0" step="1" placeholder="昼（例：3500）" />
+      </div>
+      <div class="row" style="margin-top:6px">
+        <input id="useEvening" type="number" min="0" step="1" placeholder="晩（例：4000）" />
+        <input id="useNight" type="number" min="0" step="1" placeholder="夜（例：2000）" />
+      </div>
+      <div class="small muted">時間帯定義（固定）：朝 8:00–12:59 / 昼 13:00–15:59 / 晩 16:00–21:59 / 夜 その他</div>
+    </div>
+
+    <div class="row" style="gap:8px;margin-top:10px;">
+      <button id="calcBtn">計算する</button>
+      <button id="sampleBtn" class="ghost">サンプル入力</button>
+      <button id="resetBtn" class="ghost">リセット</button>
+    </div>
+
+    <div id="hint" class="small muted" style="margin-top:6px">
+      ヒント：現在利用プランが「市場調整ゼロ」の場合は月間合計のみ入力。<br>
+      「ベーシック／連動」の場合は時間帯別を入力（未入力なら4等分で概算）。
+    </div>
+  </div>
+
+  <!-- 右ブロック：固定単価＋月次自動反映（現状維持） -->
+  <div class="card">
+    <h3 style="margin:0 0 6px 0;font-size:15px;">単価・付加項目（自動反映／編集不可）</h3>
+
+    <div class="hl">
+      <div class="rightkv">
+        <div class="key">再エネ賦課金（円/kWh）</div>
+        <div class="val" id="reenVal">-</div>
+        <div class="key">託送料金平均単価（円/kWh）</div>
+        <div class="val">4.16</div>
+      </div>
+    </div>
+
+    <h4 style="margin:10px 0 4px 0;font-size:14px;">固定単価（プラン別／税込）</h4>
+    <div class="rightkv">
+      <div class="key">ベーシック：基本料金（円/kW）</div><div class="val">3,030.00</div>
+      <div class="key">ベーシック：電力量単価（円/kWh）</div><div class="val">16.56</div>
+
+      <div class="key">市場調整ゼロ：基本料金（円/kW）</div><div class="val">3,220.00</div>
+      <div class="key">市場調整ゼロ：電力量単価（円/kWh）</div><div class="val">16.63</div>
+
+      <div class="key">市場価格連動：基本料金（円/kW）</div><div class="val">1,500.00</div>
+      <div class="key">市場価格連動：電力量単価（朝/昼/晩/夜）</div>
+      <div class="val">16.37 / 16.37 / 16.37 / 16.19</div>
+    </div>
+
+    <h4 style="margin:10px 0 4px 0;font-size:14px;">月次単価（自動反映）</h4>
+    <div class="rightkv">
+      <div class="key">燃料費調整（円/kWh）<br><span class="small muted">（ベーシック／市場調整ゼロで適用）</span></div>
+      <div class="val" id="fuelVal">-</div>
+
+      <div class="key">市場価格調整（円/kWh・税込）<br><span class="small muted">（ベーシック／市場価格連動で適用）</span></div>
+      <div class="val" id="marketVal">朝: - / 昼: - / 晩: - / 夜: -</div>
+    </div>
+
+    <div class="small muted" style="margin-top:8px;">
+      ※ 本ツールは比較・試算用。最終金額はTEPCOの請求・約款が優先です。<br>
+      ※ 再エネ・託送は電力量に加算して計算します。
+    </div>
+  </div>
+
+  <!-- 下：結果 -->
+  <div style="grid-column:1/-1;">
+    <div class="card">
+      <h3 style="margin:0 0 8px 0;font-size:16px;">比較結果</h3>
+      <div id="summary" class="small muted">対象年月を選ぶと該当単価が自動反映されます（公式の数値に基づく内蔵データ）。</div>
+
+      <table id="resultTable" style="display:none;">
+        <thead>
+          <tr>
+            <th>プラン</th>
+            <th>基本料金（円）</th>
+            <th>電力量料金（円）</th>
+            <th>再エネ＋託送（円）</th>
+            <th>燃料費調整（円）</th>
+            <th>市場価格調整（円）</th>
+            <th>合計（円）</th>
+          </tr>
+        </thead>
+        <tbody id="resultBody"></tbody>
+        <tfoot>
+          <tr>
+            <th colspan="6" style="text-align:right;">最安プラン</th>
+            <th id="bestTotal" style="text-align:right;">-</th>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div id="diffZone" class="small" style="margin-top:8px;display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="muted">© テスト用。計算式：高圧（基本=単価×契約kW×0.85）／電力量=（単価＋再エネ＋託送）×kWh／燃料費調整=燃料単価×kWh（※連動は0）／市場価格調整=時間帯kWh×時間帯単価（※ゼロは0）。</div>
+</footer>
+
+<script>
+/* =========================
+   内蔵データ（2025/04〜07）
+   ========================= */
+
+const REENE_BY_MONTH = {
+  "2025-04": 3.49,
+  "2025-05": 3.98,
+  "2025-06": 3.98,
+  "2025-07": 3.98
+};
+const TATSUSO = 4.16; // 円/kWh
+
+const FIXED_RATES = {
+  basic:  { basic_per_kw: 3030.00, energy_per_kwh: 16.56 },
+  zero:   { basic_per_kw: 3220.00, energy_per_kwh: 16.63 },
+  linked: { basic_per_kw: 1500.00, energy_per_kwh_m: 16.37, energy_per_kwh_d: 16.37, energy_per_kwh_e: 16.37, energy_per_kwh_n:16.19 }
+};
+
+// 月次データ（ご指定の確定値）
+const MONTH_DATA = {
+  "2025-04": {
+    fuel: { basic: -0.43, zero: -0.38 },
+    market_basic: {
+      "1":   { morning: -0.67, daytime: -0.43, evening: 0.31, night: -0.34 },
+      "2toEnd": { morning: -0.55, daytime: -0.49, evening: 0.43, night: -0.25 }
+    },
+    market_linked: {
+      "1":   { morning: -4.03, daytime: -2.86, evening: 0.86, night: -2.38 },
+      "2toEnd": { morning: -3.45, daytime: -3.14, evening: 1.44, night: -1.92 }
+    }
+  },
+  "2025-05": {
+    fuel: { basic: 0.15, zero: 0.18 },
+    market_basic: {
+      "1":   { morning: -0.45, daytime: -0.17, evening: 0.30, night: -0.52 },
+      "2toEnd": { morning: -0.67, daytime: -0.43, evening: 0.31, night: -0.34 }
+    },
+    market_linked: {
+      "1":   { morning: -2.24, daytime: -0.83, evening: 1.48, night: -2.58 },
+      "2toEnd": { morning: -3.33, daytime: -2.16, evening: 1.56, night: -1.68 }
+    }
+  },
+  "2025-06": {
+    fuel: { basic: -0.06, zero: -0.07 },
+    market_basic: {
+      "1":   { morning: -0.19, daytime: 0.58, evening: 0.82, night: -0.24 },
+      "2toEnd": { morning: -0.45, daytime: -0.17, evening: 0.30, night: -0.52 }
+    },
+    market_linked: {
+      "1":   { morning: -0.95, daytime: 2.90, evening: 4.10, night: -1.21 },
+      "2toEnd": { morning: -2.24, daytime: -0.83, evening: 1.48, night: -2.58 }
+    }
+  },
+  "2025-07": {
+    fuel: { basic: -0.59, zero: -0.72 },
+    market_basic: {
+      "1":   { morning: -0.12, daytime: 1.17, evening: 1.88, night: -0.26 },
+      "2toEnd": { morning: -0.24, daytime: 0.74, evening: 1.04, night: -0.31 }
+    },
+    market_linked: {
+      "1":   { morning: -0.49, daytime: 4.59, evening: 7.39, night: -1.04 },
+      "2toEnd": { morning: -0.95, daytime: 2.90, evening: 4.10, night: -1.21 }
+    }
+  }
+};
+
+/* =========
+   ユーティリティ
+   ========= */
+const el = id => document.getElementById(id);
+const fmt = n => Number(n||0).toLocaleString(undefined,{maximumFractionDigits:0});
+const yen = n => fmt(Math.round(n)) + ' 円';
+
+/* =========
+   DOM参照
+   ========= */
+const currentPlan = el('currentPlan');
+const meterDay = el('meterDay');
+const targetMonth = el('targetMonth');
+const contractKW = el('contractKW');
+
+const monthlyBox = el('monthlyBox');
+const timebandBox = el('timebandBox');
+
+const useMonthly = el('useMonthly');
+const useMorning = el('useMorning');
+const useDay = el('useDay');
+const useEvening = el('useEvening');
+const useNight = el('useNight');
+
+const reenVal = el('reenVal');
+const fuelVal = el('fuelVal');
+const marketVal = el('marketVal');
+
+const calcBtn = el('calcBtn');
+const sampleBtn = el('sampleBtn');
+const resetBtn = el('resetBtn');
+
+const resultTable = el('resultTable');
+const resultBody = el('resultBody');
+const bestTotal = el('bestTotal');
+const summary = el('summary');
+const diffZone = el('diffZone');
+
+const setHidden = (element, isHidden) => {
+  if(!element) return;
+  element.classList.toggle('hidden', Boolean(isHidden));
+};
+
+/* =========
+   入力UIの切替（PC/モバイルとも同じ条件で表示制御） */
+function updateInputMode(){
+  const showMonthly = currentPlan.value === 'zero';
+  setHidden(monthlyBox, !showMonthly);
+  setHidden(timebandBox, showMonthly);
+}
+currentPlan.addEventListener('change', ()=>{
+  updateInputMode();
+  reflectRightPanel(); // 右側も更新
+});
+meterDay.addEventListener('change', reflectRightPanel);
+targetMonth.addEventListener('change', reflectRightPanel);
+
+updateInputMode();
+
+/* =========
+   右ブロック自動反映
+   ========= */
+function reflectRightPanel(){
+  const ym = targetMonth.value;
+  const md = meterDay.value;
+  const data = MONTH_DATA[ym];
+  const reen = REENE_BY_MONTH[ym];
+  reenVal.textContent = (reen!=null ? reen.toFixed(2) : '-') ;
+
+  // 燃料費調整は、「ベーシック／ゼロ」で異なる。現在利用プランに合わせて右に表示。
+  if(data){
+    if(currentPlan.value === 'zero'){
+      fuelVal.textContent = data.fuel.zero.toFixed(2);
+    }else{
+      // ベーシック or 連動 → ベーシックの燃料単価を表示（連動には後述で未適用）
+      fuelVal.textContent = data.fuel.basic.toFixed(2);
+    }
+    // 市場価格調整（現在利用プランに合わせてベーシック or 連動の時間帯を表示）
+    let marketSet = (currentPlan.value === 'linked') ? data.market_linked[md] : data.market_basic[md];
+    if(marketSet){
+      marketVal.textContent = `朝: ${marketSet.morning.toFixed(2)} / 昼: ${marketSet.daytime.toFixed(2)} / 晩: ${marketSet.evening.toFixed(2)} / 夜: ${marketSet.night.toFixed(2)}`;
+    }else{
+      marketVal.textContent = '朝: - / 昼: - / 晩: - / 夜: -';
+    }
+  }else{
+    fuelVal.textContent = '-';
+    marketVal.textContent = '朝: - / 昼: - / 晩: - / 夜: -';
+  }
+
+  summary.textContent = `対象：${ym} ／ 検針：${md==='1'?'毎月1日':'毎月2日〜月末'} ／ 現在のプラン：${planLabel(currentPlan.value)}`;
+}
+reflectRightPanel();
+
+function planLabel(v){
+  return v==='basic'?'ベーシックプラン':(v==='zero'?'市場調整ゼロプラン':'市場価格連動プラン');
+}
+
+/* =========
+   計算ロジック
+   ========= */
+function getUsage(){
+  // 使用量の取得（どのプランの計算にも同じ使用量を使う）
+  let m=0,d=0,e=0,n=0,total=0;
+  if(currentPlan.value==='zero'){
+    total = Number(useMonthly.value||0);
+    // ベーシック/連動の比較のため、時間帯不明なら4等分で概算
+    const q = total/4;
+    m=d=e=n=q;
+  }else{
+    m = Number(useMorning.value||0);
+    d = Number(useDay.value||0);
+    e = Number(useEvening.value||0);
+    n = Number(useNight.value||0);
+    total = m+d+e+n;
+  }
+  return {morning:m,daytime:d,evening:e,night:n,total};
+}
+
+function computePlanTotals(){
+  const ym = targetMonth.value;
+  const md = meterDay.value;
+  const usage = getUsage();
+  const kW = Number(contractKW.value||0);
+
+  // guard
+  if(!MONTH_DATA[ym]){
+    throw new Error('当月データが見つかりません。');
+  }
+  const month = MONTH_DATA[ym];
+  const reen = REENE_BY_MONTH[ym] || 0;
+
+  // 市場調整（時間帯別）
+  const mb = month.market_basic[md];
+  const ml = month.market_linked[md];
+
+  // 各プランの固定単価
+  const B = FIXED_RATES.basic;
+  const Z = FIXED_RATES.zero;
+  const L = FIXED_RATES.linked;
+
+  // 共通：基本料金（2025年度仕様・85％係数適用）
+  const basicFee_basic = B.basic_per_kw * kW * 0.85;
+  const basicFee_zero  = Z.basic_per_kw * kW * 0.85;
+  const basicFee_link  = L.basic_per_kw * kW * 0.85;
+
+  // 電力量単価（再エネ＋託送を加えた実効単価）
+  // ベーシック・ゼロは単一単価、連動は時間帯別
+  const eff_basic_per_kWh = B.energy_per_kwh + reen + TATSUSO;
+  const eff_zero_per_kWh  = Z.energy_per_kwh + reen + TATSUSO;
+
+  // 連動の時間帯別実効単価
+  const eff_link_m = L.energy_per_kwh_m + reen + TATSUSO;
+  const eff_link_d = L.energy_per_kwh_d + reen + TATSUSO;
+  const eff_link_e = L.energy_per_kwh_e + reen + TATSUSO;
+  const eff_link_n = L.energy_per_kwh_n + reen + TATSUSO;
+
+  // 電力量料金
+  const energy_basic = usage.total * eff_basic_per_kWh;
+  const energy_zero  = usage.total * eff_zero_per_kWh;
+  const energy_link  = usage.morning*eff_link_m + usage.daytime*eff_link_d + usage.evening*eff_link_e + usage.night*eff_link_n;
+
+  // 再エネ＋託送（内訳把握用に別集計して表示）
+  const reen_tatsuso_basic = usage.total * (reen + TATSUSO);
+  const reen_tatsuso_zero  = usage.total * (reen + TATSUSO);
+  const reen_tatsuso_link  = usage.morning*(reen+TATSUSO) + usage.daytime*(reen+TATSUSO) + usage.evening*(reen+TATSUSO) + usage.night*(reen+TATSUSO);
+
+  // 燃料費調整（連動は0）
+  const fuel_basic = usage.total * month.fuel.basic;
+  const fuel_zero  = usage.total * month.fuel.zero;
+  const fuel_link  = 0;
+
+  // 市場価格調整（ゼロは0）
+  const market_basic =
+    usage.morning * mb.morning +
+    usage.daytime * mb.daytime +
+    usage.evening * mb.evening +
+    usage.night   * mb.night;
+
+  const market_link =
+    usage.morning * ml.morning +
+    usage.daytime * ml.daytime +
+    usage.evening * ml.evening +
+    usage.night   * ml.night;
+
+  const market_zero = 0;
+
+  // 合計
+  const total_basic = basicFee_basic + energy_basic + fuel_basic + market_basic;
+  const total_zero  = basicFee_zero  + energy_zero  + fuel_zero  + market_zero;
+  const total_link  = basicFee_link  + energy_link  + fuel_link  + market_link;
+
+  return {
+    usage,
+    perPlan: {
+      'ベーシックプラン': {
+        basic: basicFee_basic,
+        energy: energy_basic,
+        reen_tatsuso: reen_tatsuso_basic,
+        fuel: fuel_basic,
+        market: market_basic,
+        total: total_basic
+      },
+      '市場調整ゼロプラン': {
+        basic: basicFee_zero,
+        energy: energy_zero,
+        reen_tatsuso: reen_tatsuso_zero,
+        fuel: fuel_zero,
+        market: market_zero,
+        total: total_zero
+      },
+      '市場価格連動プラン': {
+        basic: basicFee_link,
+        energy: energy_link,
+        reen_tatsuso: reen_tatsuso_link,
+        fuel: fuel_link,
+        market: market_link,
+        total: total_link
+      }
+    }
+  };
+}
+
+/* =========
+   表描画
+   ========= */
+function renderTable(model){
+  const plans = model.perPlan;
+  resultBody.innerHTML = '';
+  const order = ['ベーシックプラン','市場調整ゼロプラン','市場価格連動プラン'];
+
+  let minName = null, minTotal = Infinity;
+  order.forEach(name=>{
+    const v = plans[name];
+    if(v.total < minTotal){ minTotal = v.total; minName = name; }
+  });
+
+  order.forEach(name=>{
+    const v = plans[name];
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="text-align:left">${name}${name===minName? ' <span class="pill">最安</span>':''}</td>
+      <td>${yen(v.basic)}</td>
+      <td>${yen(v.energy)}</td>
+      <td>${yen(v.reen_tatsuso)}</td>
+      <td>${yen(v.fuel)}</td>
+      <td>${yen(v.market)}</td>
+      <td><strong>${yen(v.total)}</strong></td>
+    `;
+    resultBody.appendChild(tr);
+  });
+
+  bestTotal.textContent = yen(minTotal);
+  resultTable.style.display = '';
+  const cur = planLabel(currentPlan.value);
+  const base = plans[cur].total;
+  const diffs = order.filter(n=>n!==cur).map(n=>{
+    const d = plans[n].total - base;
+    const sign = d>=0 ? '＋':'－';
+    return `${n} は「${cur}」比で ${sign}${fmt(Math.abs(d))} 円`;
+  });
+  diffZone.textContent = diffs.join(' ／ ');
+  diffZone.style.display = '';
+}
+
+/* =========
+   ボタン
+   ========= */
+calcBtn.addEventListener('click', ()=>{
+  try{
+    const model = computePlanTotals();
+    const ym = targetMonth.value;
+    const md = meterDay.value==='1'?'毎月1日':'毎月2日〜月末';
+    const u = model.usage;
+    summary.textContent = `対象：${ym} ／ 検針：${md} ／ 使用量 合計：${fmt(u.total)} kWh（朝:${fmt(u.morning)} 昼:${fmt(u.daytime)} 晩:${fmt(u.evening)} 夜:${fmt(u.night)}）`;
+    renderTable(model);
+  }catch(e){
+    alert(e.message);
+  }
+});
+
+sampleBtn.addEventListener('click', ()=>{
+  contractKW.value = 50;
+  if(currentPlan.value==='zero'){
+    useMonthly.value = 12000;
+  }else{
+    useMorning.value = 2500;
+    useDay.value     = 3500;
+    useEvening.value = 4000;
+    useNight.value   = 2000;
+  }
+  summary.textContent = 'サンプル値を投入しました。計算するを押してください。';
+});
+
+resetBtn.addEventListener('click', ()=>{
+  contractKW.value = '';
+  useMonthly.value = '';
+  useMorning.value = useDay.value = useEvening.value = useNight.value = '';
+  resultTable.style.display='none';
+  diffZone.style.display='none';
+  summary.textContent = '入力をリセットしました。';
+});
+
+/* 初期表示 */
+summary.textContent = '対象年月を選ぶと該当単価が自動反映されます（公式PDFからの確定値を内蔵）。';
+</script>
+</body>
+</html>
