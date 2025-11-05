@@ -322,15 +322,7 @@ const MONTH_DATA = {
 };
 
 // 既知の再エネ賦課金（未定義月は0扱い）
-const REENE_BY_MONTH = {
-  "2025-04": 3.98,
-  "2025-05": 3.98,
-  "2025-06": 3.98,
-  "2025-07": 3.98,
-  "2025-08": 3.98,
-  "2025-09": 3.98
-};
-
+const REENE_BY_MONTH = {"2025-04":3.98,"2025-05":3.98,"2025-06":3.98,"2025-07":3.98,"2025-08":3.98,"2025-09":3.98};
 const TATSUSO = 4.16;
 
 const el=id=>document.getElementById(id);
@@ -351,44 +343,26 @@ meterDay.addEventListener('change', reflectRightPanel);
 targetMonth.addEventListener('change', reflectRightPanel);
 
 function reflectRightPanel(){
-  const ymRaw = targetMonth.value;           // 例: "2025-06"
-  const ym    = ymRaw.replace('-', '');      // 例: "202506"（フォールバック用）
-  const md    = meterDay.value;              // "1" or "2toEnd"
+  const ymRaw=targetMonth.value; const ym=ymRaw.replace('-', ''); const md=meterDay.value;
+  const data = MONTH_DATA[ymRaw] || MONTH_DATA[ym];
+  const reen = (RENEE_BY_MONTH[ymRaw] ?? REENE_BY_MONTH[ym] ?? 0);
 
-  const data  = MONTH_DATA[ymRaw] || MONTH_DATA[ym];
-  const reen  = (REENE_BY_MONTH[ymRaw] ?? REENE_BY_MONTH[ym] ?? 0);
+  reenVal.textContent = (reen!=null ? reen.toFixed(2) : '-');
 
-  // 再エネ
-  reenVal.textContent = (reen != null ? reen.toFixed(2) : '-');
+  if(data && data.fuel){
+    fuelVal.textContent = (currentPlan.value==='zero' ? (data.fuel.zero??0) : (data.fuel.basic??0)).toFixed(2);
+  } else { fuelVal.textContent='-'; }
 
-  // 燃料費調整
-  if (data && data.fuel){
-    fuelVal.textContent = (currentPlan.value === 'zero'
-      ? (data.fuel.zero  ?? 0)
-      : (data.fuel.basic ?? 0)
-    ).toFixed(2);
-  } else {
-    fuelVal.textContent = '-';
-  }
-
-  // 市場価格調整（時間帯）
   let marketSet = null;
-  if (data){
-    marketSet = (currentPlan.value === 'linked')
-      ? (data.market_linked?.[md])
-      : (data.market_basic?.[md]);
+  if(data){
+    marketSet = (currentPlan.value==='linked') ? (data.market_linked?.[md]) : (data.market_basic?.[md]);
   }
-  if (marketSet){
-    marketVal.textContent =
-      `朝: ${(marketSet.morning ?? 0).toFixed(2)} / ` +
-      `昼: ${(marketSet.daytime ?? 0).toFixed(2)} / ` +
-      `晩: ${(marketSet.evening ?? 0).toFixed(2)} / ` +
-      `夜: ${(marketSet.night   ?? 0).toFixed(2)}`;
+  if(marketSet){
+    marketVal.textContent = `朝: ${(marketSet.morning??0).toFixed(2)} / 昼: ${(marketSet.daytime??0).toFixed(2)} / 晩: ${(marketSet.evening??0).toFixed(2)} / 夜: ${(marketSet.night??0).toFixed(2)}`;
   } else {
     marketVal.textContent = '朝: - / 昼: - / 晩: - / 夜: -';
   }
 }
-
 
 function getUsage(){
   if(currentPlan.value==='zero'){ const total=Number(useMonthly.value||0),q=total/4; return{morning:q,daytime:q,evening:q,night:q,total}; }
@@ -399,72 +373,54 @@ function getUsage(){
 function compute(){
   const ymRaw=targetMonth.value; const ym=ymRaw.replace('-', ''); const md=meterDay.value;
   const data = MONTH_DATA[ymRaw] || MONTH_DATA[ym]; if(!data) throw new Error('当月データが見つかりません。');
-  const reen=(REENE_BY_MONTH[ymRaw] ?? REENE_BY_MONTH[ym] ?? 0);
+  const reen=(RENEE_BY_MONTH[ymRaw] ?? REENE_BY_MONTH[ym] ?? 0);
   const usage=getUsage(); const kW=Number(contractKW.value||0);
 
   const B={basic_per_kw:3030.00, energy_per_kwh:16.56};
   const Z={basic_per_kw:3220.00, energy_per_kwh:16.63};
   const L={basic_per_kw:1500.00, energy_per_kwh_m:16.37, energy_per_kwh_d:16.37, energy_per_kwh_e:16.37, energy_per_kwh_n:16.19};
 
-  // 基本料金
   const basic_basic=B.basic_per_kw*kW*0.85, basic_zero=Z.basic_per_kw*kW*0.85, basic_link=L.basic_per_kw*kW*0.85;
 
-  // ⚠️ 電力量は「ベース単価のみ」。再エネは別項目で集計・加算。
-  const energy_basic = usage.total * B.energy_per_kwh;
-  const energy_zero  = usage.total * Z.energy_per_kwh;
-  const energy_link  = (
-    usage.morning * L.energy_per_kwh_m +
-    usage.daytime * L.energy_per_kwh_d +
-    usage.evening * L.energy_per_kwh_e +
-    usage.night   * L.energy_per_kwh_n
-  );
+  const eff_basic=B.energy_per_kwh+reen, eff_zero=Z.energy_per_kwh+reen;
+  const eff_link_m=L.energy_per_kwh_m+reen, eff_link_d=L.energy_per_kwh_d+reen, eff_link_e=L.energy_per_kwh_e+reen, eff_link_n=L.energy_per_kwh_n+reen;
 
-  // 再エネ（別立て）
+  const energy_basic=usage.total*eff_basic;
+  const energy_zero=usage.total*eff_zero;
+  const energy_link=usage.morning*eff_link_m+usage.daytime*eff_link_d+usage.evening*eff_link_e+usage.night*eff_link_n;
+
   const reen_basic=usage.total*reen, reen_zero=usage.total*reen, reen_link=usage.total*reen;
 
-  // 託送（別立て。合計には含めないなら total_* に足さない）
   const tatsuso_basic=usage.total*TATSUSO, tatsuso_zero=usage.total*TATSUSO, tatsuso_link=usage.total*TATSUSO;
 
-  // 燃料費調整
   const fuel_basic=usage.total*(data.fuel?.basic??0), fuel_zero=usage.total*(data.fuel?.zero??0), fuel_link=0;
 
-  // 市場価格調整
   const mb=data.market_basic?.[md]||{morning:0,daytime:0,evening:0,night:0};
   const ml=data.market_linked?.[md]||{morning:0,daytime:0,evening:0,night:0};
+
   const market_basic=usage.morning*mb.morning+usage.daytime*mb.daytime+usage.evening*mb.evening+usage.night*mb.night;
   const market_zero=0;
   const market_link=usage.morning*ml.morning+usage.daytime*ml.daytime+usage.evening*ml.evening+usage.night*ml.night;
 
-  // 合計（= 基本 + 電力量 + 再エネ + 燃料費調整 + 市場価格調整）
-  // 託送は「託送料金相当額」欄で表示するだけなら total_* に含めない
   const total_basic=basic_basic+energy_basic+reen_basic+fuel_basic+market_basic;
-  const total_zero =basic_zero +energy_zero +reen_zero +fuel_zero +market_zero;
-  const total_link =basic_link +energy_link +reen_link +fuel_link +market_link;
+  const total_zero=basic_zero+energy_zero+reen_zero+fuel_zero+market_zero;
+  const total_link=basic_link+energy_link+reen_link+fuel_link+market_link;
 
   return{perPlan:[
     {name:"ベーシックプラン", basic:basic_basic, energy:energy_basic, reen:reen_basic, tatsuso:tatsuso_basic, fuel:fuel_basic, market:market_basic, total:total_basic},
-    {name:"市場調整ゼロプラン", basic:basic_zero,  energy:energy_zero,  reen:reen_zero,  tatsuso:tatsuso_zero,  fuel:fuel_zero,  market:market_zero,  total:total_zero},
-    {name:"市場価格連動プラン", basic:basic_link,  energy:energy_link,  reen:reen_link,  tatsuso:tatsuso_link,  fuel:fuel_link,  market:market_link,  total:total_link}
+    {name:"市場調整ゼロプラン", basic:basic_zero, energy:energy_zero, reen:reen_zero, tatsuso:tatsuso_zero, fuel:fuel_zero, market:market_zero, total:total_zero},
+    {name:"市場価格連動プラン", basic:basic_link, energy:energy_link, reen:reen_link, tatsuso:tatsuso_link, fuel:fuel_link, market:market_link, total:total_link}
   ]};
 }
 
 function render(model){
-  resultBody.innerHTML = "";
-  for (const p of model.perPlan) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${p.name}</td>
-      <td>${yen(p.basic)}</td>
-      <td>${yen(p.energy)}</td>
-      <td>${yen(p.reen)}</td>
-      <td>${yen(p.tatsuso)}</td>
-      <td>${yen(p.fuel)}</td>
-      <td>${yen(p.market)}</td>
-      <td><strong>${yen(p.total)}</strong></td>
-    `;
+  resultBody.innerHTML="";
+  for(const p of model.perPlan){
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>$\{p.name}</td><td>$\{yen(p.basic)}</td><td>$\{yen(p.energy)}</td><td>$\{yen(p.reen)}</td><td>$\{yen(p.tatsuso)}</td><td>$\{yen(p.fuel)}</td><td>$\{yen(p.market)}</td><td><strong>$\{yen(p.total)}</strong></td>`;
     resultBody.appendChild(tr);
   }
-  resultTable.style.display = "";
+  resultTable.style.display="";
 }
 
 document.getElementById('calcBtn').addEventListener('click', ()=>{ try{const m=compute(); render(m);}catch(e){alert(e.message);} });
